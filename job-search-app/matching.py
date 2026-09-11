@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 
-WEIGHTS = {'Skills': .5, 'Salary': .2, 'Location': .2, 'Size': .1}
+WEIGHTS = {'Skills': .4, 'Salary': .3, 'Location': .1, 'Size': .2}
 ALIASES = {'powerbi':'power bi', 'microsoft excel':'excel', 'ms excel':'excel',
            'postgresql':'sql', 'mysql':'sql', 't-sql':'sql', 'pl/sql':'sql',
            'statistical':'statistics', 'github':'git', 'sklearn':'scikit-learn'}

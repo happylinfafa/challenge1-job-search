@@ -1,0 +1,37 @@
+{
+  "input_rows": 2252,
+  "filter_counts": {
+    "Estimated minimum below USD 60,000": 1572,
+    "Eligible: estimated minimum >= USD 60,000": 679,
+    "Salary unknown or unparseable": 1
+  },
+  "profiles": [
+    {
+      "label": "SQL profile",
+      "skills": "SQL",
+      "location": "Chicago, IL",
+      "salary": 80000,
+      "size": "51 to 200 employees",
+      "returned": 5,
+      "matching_ms": 122.62
+    },
+    {
+      "label": "Python profile",
+      "skills": "Python, SQL, Excel",
+      "location": "New York, NY",
+      "salary": 80000,
+      "size": "51 to 200 employees",
+      "returned": 5,
+      "matching_ms": 111.84
+    },
+    {
+      "label": "BI profile",
+      "skills": "Tableau, Power BI, SQL",
+      "location": "Plano, TX",
+      "salary": 80000,
+      "size": "51 to 200 employees",
+      "returned": 5,
+      "matching_ms": 103.93
+    }
+  ]
+}

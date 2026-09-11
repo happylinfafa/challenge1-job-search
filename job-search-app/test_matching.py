@@ -9,10 +9,10 @@ class MatchingTests(unittest.TestCase):
     def rank(self,*rows):
         return rank_jobs(pd.DataFrame(rows),'python, SQL, Excel','Chicago,IL',80000,'51 to 200 employees')
     def test_manual_score(self):
-        self.assertEqual(self.rank(self.job())[0]['score'],77.5)
+        self.assertEqual(self.rank(self.job())[0]['score'],75.0)
     def test_missing_reweight(self):
         r=self.rank(self.job(company_size=None))[0]
-        self.assertAlmostEqual(r['score'],67.5/.9)
+        self.assertAlmostEqual(r['score'],55/.8)
         self.assertIsNone(r['scores']['Size'])
     def test_no_skill_evidence(self):
         self.assertIsNone(self.rank(self.job(skills=None))[0]['scores']['Skills'])

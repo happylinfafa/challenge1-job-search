@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from matching import rank_jobs, parse_skills
 from resume import read_document, extract, evidence_for
+from eligibility import screen
 
 st.set_page_config(page_title='Explainable Job Match',page_icon='🔎',layout='wide')
 st.markdown('<style>.stApp{background:#f6f8fc}h1,h2,h3{color:#183653} [data-testid="stMetric"]{background:#eef5fa;padding:12px;border-radius:10px}</style>',unsafe_allow_html=True)
@@ -11,15 +12,24 @@ st.markdown('<style>.stApp{background:#f6f8fc}h1,h2,h3{color:#183653} [data-test
 def load():
     return pd.read_csv(Path(__file__).parent/'data/jobs.csv')
 jobs=load()
+@st.cache_data
+def filter_jobs(frame):
+    return screen(frame)
+salary_jobs,filter_audit=filter_jobs(jobs)
 vocab=sorted({s.strip() for x in jobs.skills.dropna() for s in x.split(';')}|{'PyTorch','TensorFlow'})
 st.title('Explainable Job Match')
 st.caption('Resume → Review profile → Weighted matching → Evidence → Human decision')
 st.info('2,252 historical jobs · Estimated annual USD salaries · Scores describe available evidence, not hiring probability.')
+st.warning('Required: estimated minimum annual salary of USD 60,000 or more. Unknown/invalid salary or unsupported currency/period is excluded. Location and work arrangement are not hard filters.')
+with st.expander('Hard-filter counts and evidence'):
+    st.dataframe(filter_audit.filter_reason.value_counts().rename_axis('Reason').reset_index(name='Jobs'),hide_index=True)
+    st.dataframe(filter_audit[filter_audit.eligible],hide_index=True)
+    st.download_button('Download filter audit',filter_audit.to_csv(index=False).encode('utf-8-sig'),'filter_audit.csv','text/csv')
 for key,value in {'skills':'','education':'','location':'','candidate':'Candidate','documents':[]}.items():
     st.session_state.setdefault(key,value)
 with st.expander('1 · Upload resume and extract profile',expanded=True):
     st.caption('PDF with selectable text, DOCX, or UTF-8 TXT; maximum 5 MB. Processed in this session without an external AI API or intentional disk storage. Scanned PDFs require text/OCR first.')
-    upload=st.file_uploader('Resume',type=['pdf','docx','txt'])
+    upload=st.file_uploader('Resume',type=['pdf','docx','txt'],max_upload_size=5)
     pasted=st.text_area('Or paste resume text',height=90)
     if st.button('Extract profile',type='primary'):
         try:
@@ -44,14 +54,15 @@ with st.sidebar:
         sizes=sorted(jobs.company_size.dropna().unique(),key=lambda s:int(s.split()[0].replace('+','')))
         size=st.selectbox('Company size',sizes)
         st.caption('Education is contextual only. Weights retain your four original factors.')
-        weights={k:st.number_input(f'{k} weight (%)',0,100,v,5) for k,v in [('Skills',50),('Salary',20),('Location',20),('Size',10)]}
+        weights={k:st.number_input(f'{k} weight (%)',0,100,v,5) for k,v in [('Skills',40),('Salary',30),('Location',10),('Size',20)]}
         search=st.form_submit_button('Search Jobs',type='primary')
-    st.caption('City and size are scoring preferences. Remote/hybrid eligibility, experience and sponsorship are not inferred.')
+    st.caption('The USD 60,000 estimated annual minimum is fixed. Your salary expectation affects scoring after filtering. City and size are preferences; experience is not scored.')
 if search:
+    st.session_state.pop('results',None)
     if not parse_skills(skills) or not location.strip(): st.error('Provide skills and a preferred location.')
     elif sum(weights.values())!=100: st.error('Weights must total 100%.')
     else:
-        results=rank_jobs(jobs,skills,location,salary,size)
+        results=rank_jobs(salary_jobs,skills,location,salary,size)
         for r in results:
             active={k:v for k,v in r['scores'].items() if v is not None and weights[k]>0}
             r['possible']=sum(weights[k] for k in active)
@@ -67,11 +78,11 @@ if 'results' not in st.session_state:
     st.write('Upload a resume or enter a profile, review the fields, then select Search Jobs.')
 else:
     results=st.session_state.results; p=st.session_state.profile
-    st.subheader('3 · Top 5 recommendations')
+    st.subheader(f'3 · Recommendations ({len(results)} of up to 5)')
     st.caption(f"{st.session_state.unknown_count} jobs without extracted skill evidence excluded from this recommendation list. This is evidence screening, not a finding that you are unqualified.")
-    if not results: st.warning('No jobs with skill evidence available.')
+    if not results: st.warning('No jobs meet the estimated salary-floor and skill-evidence requirements. No unverified jobs have been added to fill the list.')
     else:
-        overview=pd.DataFrame([{'Job':r['job']['title'],'Company':r['job']['company'],'Score':round(r['score'],1),'Evidence weight':r['possible']} for r in results])
+        overview=pd.DataFrame([{'Job ID':r['job']['job_id'],'Job':r['job']['title'],'Company':r['job']['company'],'Score':round(r['score'],1),'Evidence weight':r['possible'],**r['scores'],'Matched skills':'; '.join(r['matched']),'Missing skills':'; '.join(r['missing'])} for r in results])
         st.dataframe(overview,hide_index=True,use_container_width=True)
         selected=st.selectbox('Inspect a recommendation',range(len(results)),format_func=lambda i:f"{i+1}. {results[i]['job']['title']}")
         r=results[selected]; j=r['job']
@@ -84,7 +95,7 @@ else:
                     st.write('**'+j['title']+'**'); st.write(j['company'] if pd.notna(j['company']) else 'Company unknown'); st.write(j['location']); st.write(j['company_size'] if pd.notna(j['company_size']) else 'Size unknown')
                 with b:
                     st.write('**'+(p['name'] or 'Candidate')+'**'); st.write(p['education'] or 'Education not supplied'); st.write(p['skills']); st.write(p['location'])
-                salary_text=f"${j['salary_min']:,.0f}–${j['salary_max']:,.0f}" if pd.notna(j['salary_min']) else 'Unknown'
+                salary_text=f"USD {j['salary_min']:,.0f}–{j['salary_max']:,.0f} / year (estimated)" if pd.notna(j['salary_min']) else 'Unknown'
                 st.write('Estimated annual salary: '+salary_text)
                 st.metric('Overall match · scored subtotal',f"{r['earned']:.1f} / {r['possible']}",f"{r['score']:.1f}% normalized",delta_color='off')
                 for k,value in r['scores'].items():
@@ -92,10 +103,14 @@ else:
                     st.write(f"{k}: unknown" if value is None else f"{k}: {value*w/100:.1f} / {w} points ({value:.1f}/100)")
                     if value is not None: st.progress(value/100)
                 st.caption('Unknown factors excluded from denominator. A high percentage with fewer scored points has less evidence.')
+                st.warning('Even 100% only means the scored factors match. Education, seniority and experience are not scored; review the full description before deciding.')
+                st.caption('City scoring uses the dataset location field. No US or on-site requirement is enforced; review actual work arrangements in the description.')
         with right:
             with st.container(border=True):
                 st.subheader('Evidence retrieved')
                 evidence=[]
+                audit_row=filter_audit[filter_audit.job_id==j['job_id']].iloc[0]
+                evidence.append({'Type':'Mandatory estimated salary screen','Evidence':audit_row.evidence,'Source':'Dataset salary fields '+j['job_id']})
                 for skill in r['matched']:
                     e=evidence_for(skill,st.session_state.result_docs)
                     evidence.append({'Type':'Candidate skill','Evidence':e['Evidence'] if e else skill+' — user-confirmed profile; no resume excerpt found','Source':e['Source'] if e else 'Reviewed profile'})

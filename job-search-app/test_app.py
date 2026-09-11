@@ -4,6 +4,9 @@ from pathlib import Path
 from resume import read_document,extract
 
 class ResumeTests(unittest.TestCase):
+    def setUp(self):
+        import streamlit as st
+        st.cache_data.clear()
     def test_text(self):
         p=extract(read_document('r.txt',b'UMKC\nChicago, IL\nSQL Python'),['SQL','Python','R'])
         self.assertEqual(p['skills'],'SQL, Python')
@@ -30,5 +33,26 @@ class ResumeTests(unittest.TestCase):
         next(b for b in a.button if b.label=='Confirm decision').click().run(timeout=30)
         self.assertFalse(a.exception)
         self.assertTrue(a.session_state['feedback'])
+        next(n for n in a.number_input if n.label=='Skills weight (%)').set_value(55)
+        next(b for b in a.button if b.label=='Search Jobs').click().run(timeout=30)
+        self.assertTrue(a.error)
+        self.assertNotIn('results',a.session_state)
+
+    def test_empty_results(self):
+        from unittest.mock import patch
+        import pandas as pd
+        from streamlit.testing.v1 import AppTest
+        import eligibility
+        original=eligibility.screen
+        def empty(jobs):
+            _,audit=original(jobs)
+            return jobs.iloc[:0].copy(),audit
+        with patch('eligibility.screen',side_effect=empty):
+            a=AppTest.from_file(str(Path(__file__).with_name('app.py'))).run(timeout=30)
+            a.text_input(key='skills').set_value('SQL')
+            a.text_input(key='location').set_value('Chicago, IL')
+            next(b for b in a.button if b.label=='Search Jobs').click().run(timeout=30)
+            self.assertFalse(a.exception)
+            self.assertEqual(len(a.session_state['results']),0)
 
 if __name__=='__main__': unittest.main()
